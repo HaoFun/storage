@@ -1,11 +1,15 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
+	"storage/meta"
+	"storage/util"
+	"time"
 )
 
 func UploadHandler(w http.ResponseWriter, r *http.Request) {
@@ -26,18 +30,32 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
          }
          defer file.Close()
 
-         newFile, err := os.Create("./temp/" + head.Filename)
+         fileMeta := meta.FileMeta{
+         	FileName: head.Filename,
+         	Location: "./temp/" + head.Filename,
+         	UploadAt: time.Now().Format("2006-01-02 15:04:05"),
+		 }
+
+         newFile, err := os.Create(fileMeta.Location)
 	     if err != nil {
 	     	fmt.Printf("Failed to create file, err:%s\n", err.Error())
 	     	return
 		 }
          defer newFile.Close()
 
-         _, err = io.Copy(newFile, file)
+         fileMeta.FileSize, err = io.Copy(newFile, file)
          if err != nil {
          	fmt.Printf("Failed to save file, err:%s\n", err.Error())
          	return
 		 }
+
+         // 檔案內容回到起始位置
+         newFile.Seek(0,0)
+         fileMeta.FileSha1 = util.FileSha1(newFile)
+
+         meta.UpdateFileMeta(fileMeta)
+
+         fmt.Print(fileMeta)
 
          http.Redirect(w, r, "/file/upload/success", http.StatusFound)
 	}
@@ -45,4 +63,18 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 func UploadSuccessHandler(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "Upload Finished!")
+}
+
+func GetFileMetaHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	filehash := r.Form["filehash"][0]
+	file := meta.GetFileMeta(filehash)
+	data, err := json.Marshal(file)
+
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(data)
 }
