@@ -67,8 +67,8 @@ func UploadSuccessHandler(w http.ResponseWriter, r *http.Request) {
 
 func GetFileMetaHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	filehash := r.Form["filehash"][0]
-	file := meta.GetFileMeta(filehash)
+	fileHash := r.Form["filehash"][0]
+	file := meta.GetFileMeta(fileHash)
 	data, err := json.Marshal(file)
 
 	if err != nil {
@@ -77,4 +77,78 @@ func GetFileMetaHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(data)
+}
+
+func DownloadHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	fileSha1 := r.Form.Get("fileHash")
+
+	fileMeta := meta.GetFileMeta(fileSha1)
+
+	file, err := os.Open(fileMeta.Location)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	defer file.Close()
+
+	data, err := ioutil.ReadAll(file)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/octect-stream")
+	w.Header().Set("content-disposition", "attachment; filename=\""+fileMeta.FileName+"\"")
+	w.Write(data)
+}
+
+func FileMetaUpdateHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+
+	opType := r.Form.Get("op")
+	fileSha1 := r.Form.Get("fileHash")
+	newFileName := r.Form.Get("fileName")
+
+	if opType != "0" {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	if r.Method != "POST" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	currentFileMeta := meta.GetFileMeta(fileSha1)
+
+	newPath := "./temp/" + newFileName
+
+	os.Rename(currentFileMeta.Location, newPath)
+	currentFileMeta.FileName = newFileName
+	currentFileMeta.Location = newPath
+
+	meta.UpdateFileMeta(currentFileMeta)
+
+	data, err := json.Marshal(currentFileMeta)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+    w.Write(data)
+}
+
+func FileDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+
+	fileSha1 := r.Form.Get("fileHash")
+
+	fileMeta := meta.GetFileMeta(fileSha1)
+	os.Remove(fileMeta.Location)
+
+    meta.RemoveFileMeta(fileSha1)
+
+	w.WriteHeader(http.StatusOK)
 }
